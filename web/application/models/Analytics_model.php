@@ -1,6 +1,9 @@
 <?php
 namespace Model;
 use App;
+use Exception;
+use Model\Achievement\Enum\Transaction_info;
+use stdClass;
 use System\Emerald\Emerald_model;
 
 class Analytics_model extends Emerald_Model
@@ -62,7 +65,7 @@ class Analytics_model extends Emerald_Model
     /**
      * @return Int
      */
-    public function get_action():int
+    public function get_action():string
     {
         return $this->action;
     }
@@ -96,9 +99,9 @@ class Analytics_model extends Emerald_Model
     }
 
     /**
-     * @return int
+     * @return float
      */
-    public function get_amount(): Int
+    public function get_amount(): float
     {
         return $this->amount;
     }
@@ -178,9 +181,76 @@ class Analytics_model extends Emerald_Model
         return App::get_s()->is_affected();
     }
 
-    public function get_analytics_for_user(int $user_id): array
+    public static function get_analytics_for_user(int $user_id): array
     {
         return static::transform_many(App::get_s()->from(self::CLASS_TABLE)->where(['user_id' => $user_id])->orderBy('time_created', 'ASC')->many());
     }
 
+    /**
+     * @param int $user_id
+     * @return array
+     */
+    public static function get_boosterpack_analytics_for_user(int $user_id): array
+    {
+        return static::transform_many(App::get_s()->from(self::CLASS_TABLE)
+            ->where([
+                'user_id' => $user_id,
+                'object' => Transaction_info::BOOSTERPACK,
+            ])
+            ->orderBy('time_created', 'ASC')
+            ->many());
+    }
+
+    /**
+     * @param Emerald_model $object
+     * @param string        $action
+     * @param float         $amount
+     * @return bool
+     */
+    public static function log(Emerald_model $object, string $action, float $amount): bool
+    {
+        $analytics = static::create([
+            'user_id' => (int) User_model::get_user()->get_id(),
+            'object' => Transaction_info::get_object_name_by_class($object),
+            'object_id' => $object->get_id(),
+            'action' => $action,
+            'amount' => $amount,
+        ]);
+        return (bool) $analytics->get_id();
+    }
+
+    /**
+     * @param Analytics_model $data
+     * @param string          $preparation
+     * @return stdClass
+     * @throws Exception
+     */
+    public static function preparation(Analytics_model $data, $preparation = 'default'):stdClass
+    {
+        switch ($preparation)
+        {
+            case 'default':
+                return self::_preparation_default($data);
+            default:
+                throw new Exception('undefined preparation type');
+        }
+    }
+
+    /**
+     * @param Analytics_model $data
+     * @return stdClass
+     */
+    private static function _preparation_default(Analytics_model  $data):stdClass
+    {
+        $o = new stdClass();
+
+        $o->id = $data->get_id();
+        $o->object = $data->get_object();
+        $o->action = $data->get_action();
+        $o->object_id = $data->get_object_id();
+        $o->amount = $data->get_amount();
+        $o->time_created = $data->get_time_created();
+
+        return $o;
+    }
 }

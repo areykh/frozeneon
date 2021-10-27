@@ -2,6 +2,7 @@
 namespace Model;
 use App;
 use Exception;
+use Model\Achievement\Enum\Transaction_type;
 use stdClass;
 use System\Emerald\Emerald_model;
 
@@ -152,6 +153,11 @@ class Post_model extends Emerald_Model
     public function get_comments():array
     {
        // TODO: task 2, комментирование
+        if (is_null($this->comments))
+        {
+            $this->comments = Comment_model::get_all_by_assign_id($this->get_id());
+        }
+        return $this->comments;
     }
 
     /**
@@ -182,6 +188,8 @@ class Post_model extends Emerald_Model
     public function reload()
     {
         parent::reload();
+        $this->comments = NULL;
+        $this->user = NULL;
         return $this;
     }
 
@@ -216,8 +224,51 @@ class Post_model extends Emerald_Model
     public function increment_likes(User_model $user): bool
     {
         // TODO: task 3, лайк поста
-    }
+        // Уровень изоляции устанавливаем Read committed для текущей транзакции
+        // Изменения для других транзакций будут доступны после коммита текущей транзакции
+        App::get_s()->set_transaction_read_committed('')->execute();
+        App::get_s()->start_trans()->execute();
 
+        // Данным запросом приостанавливаем чтение данных из таблицы для других транзакций до коммита текущей транзакции
+        $user = User_model::transform_one(App::get_s()->from(User_model::CLASS_TABLE)
+            ->where(['id' => $user->get_id()])
+            ->for_update()
+            ->one());
+
+        // Берем текущие данные по юзеру, есть вероятность того, что средств на балансе лайков уже недостаточно
+        if ($user->get_likes_balance() < 1)
+        {
+            App::get_s()->rollback()->execute();
+            return FALSE;
+        }
+
+        // Уменьшаем баланс лайков юзера на 1
+        $user_decrement_likes_result = $user->decrement_likes();
+        // Производим запись в таблицу аналитики
+        $insert_analytics_result = Analytics_model::log(
+            $this,
+            Transaction_type::LIKES_BALANCE_WITHDRAW,
+            1
+        );
+
+        // Увеличиваем количество лайков поста на 1 (атомарное обновление), не блокируем выборку для других запросов SELECT
+        App::get_s()->from(self::get_table())
+            ->where(['id' => $this->get_id()])
+            ->update(sprintf('likes = likes + %s', App::get_s()->quote(1)))
+            ->execute();
+        $post_increment_likes_result = App::get_s()->is_affected();
+
+        // Если изменения прошли, тогда коммит
+        if ($user_decrement_likes_result && $insert_analytics_result && $post_increment_likes_result)
+        {
+            App::get_s()->commit()->execute();
+            return TRUE;
+        }
+
+        // Изменения не прошли, откатываем
+        App::get_s()->rollback()->execute();
+        return FALSE;
+    }
 
     /**
      * @param Post_model $data
@@ -273,7 +324,7 @@ class Post_model extends Emerald_Model
         $o->img = $data->get_img();
 
         $o->user = User_model::preparation($data->get_user(),'main_page');
-        $o->coments = Comment_model::preparation_many($data->get_comments(),'default');
+        $o->comments = Comment_model::preparation_many($data->get_comments(),'default');
 
         $o->likes = $data->get_likes();
 

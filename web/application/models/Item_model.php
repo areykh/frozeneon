@@ -3,7 +3,7 @@
 namespace Model;
 
 use App;
-use Cake\Database\Exception;
+use Exception;
 use System\Emerald\Emerald_model;
 use stdClass;
 
@@ -87,5 +87,36 @@ class Item_model extends Emerald_model {
         App::get_s()->from(self::CLASS_TABLE)->where(['id' => $this->get_id()])->delete()->execute();
 
         return App::get_s()->is_affected();
+    }
+
+    /**
+     * @param Item_model $data
+     * @param string     $preparation
+     * @return stdClass
+     */
+    public static function preparation(Item_model $data, string $preparation = 'default')
+    {
+        switch ($preparation)
+        {
+            case 'default':
+                return self::_preparation_default($data);
+            default:
+                throw new Exception('undefined preparation type');
+        }
+    }
+
+    /**
+     * @param Item_model $data
+     *
+     * @return stdClass
+     */
+    private static function _preparation_default(Item_model $data): stdClass
+    {
+        $o = new stdClass();
+
+        $o->price = $data->get_price();
+        $o->name = $data->get_name();
+
+        return $o;
     }
 }

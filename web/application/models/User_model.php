@@ -4,6 +4,7 @@ namespace Model;
 use App;
 use Exception;
 use http\Client\Curl\User;
+use Model\Achievement\Enum\Transaction_type;
 use stdClass;
 use System\Emerald\Emerald_model;
 
@@ -16,6 +17,7 @@ use System\Emerald\Emerald_model;
 class User_model extends Emerald_model {
     const CLASS_TABLE = 'user';
 
+    const FORM_VALIDATION_GROUP_ADD_MONEY = 'add_money';
 
     /** @var string */
     protected $email;
@@ -263,25 +265,109 @@ class User_model extends Emerald_model {
      * @param float $sum
      *
      * @return bool
-     * @throws \ShadowIgniterException
+     * @throws Exception
+     */
+    public function refill_wallet_balance(float $sum): bool
+    {
+        // Уровень изоляции устанавливаем Read committed для текущей транзакции
+        // Изменения для других транзакций будут доступны после коммита текущей транзакции
+        App::get_s()->set_transaction_read_committed()->execute();
+        App::get_s()->start_trans()->execute();
+
+        // Данным запросом приостанавливаем чтение данных из таблицы для других транзакций до коммита текущей транзакции
+        $user = User_model::transform_one(App::get_s()->from(User_model::CLASS_TABLE)
+            ->where(['id' => $this->get_id()])
+            ->for_update()
+            ->one());
+
+        // Пополняем баланс кошелька пользователя
+        $user_add_money_result = $user->add_money($sum);
+
+        // Производим запись в таблицу аналитики
+        $insert_analytics_user_add_money_result = Analytics_model::log(
+            $this,
+            Transaction_type::WALLET_BALANCE_ACCRUAL,
+            $sum
+        );
+
+        // Если изменения прошли, тогда коммит
+        if ($user_add_money_result && $insert_analytics_user_add_money_result)
+        {
+            App::get_s()->commit()->execute();
+            return TRUE;
+        }
+
+        // Изменения не прошли, откатываем
+        App::get_s()->rollback()->execute();
+        return FALSE;
+    }
+
+    /**
+     * @param float $sum
+     * @return bool
+     * @throws Exception
      */
     public function add_money(float $sum): bool
     {
         // TODO: task 4, добавление денег
+        App::get_s()
+            ->from(self::get_table())
+            ->where(['id' => $this->get_id()])
+            ->update([
+                sprintf('wallet_balance = wallet_balance + %s', $sum),
+                sprintf('wallet_total_refilled = wallet_total_refilled + %s', $sum),
+            ])
+            ->execute();
+
+        if ( ! App::get_s()->is_affected())
+        {
+            return FALSE;
+        }
 
         return TRUE;
     }
 
-
     /**
      * @param float $sum
-     *
      * @return bool
-     * @throws \ShadowIgniterException
+     * @throws Exception
      */
     public function remove_money(float $sum): bool
     {
         // TODO: task 5, списание денег
+        App::get_s()
+            ->from(self::get_table())
+            ->where(['id' => $this->get_id()])
+            ->update([
+                sprintf('wallet_balance = wallet_balance - %s', $sum),
+                sprintf('wallet_total_withdrawn = wallet_total_withdrawn + %s', $sum),
+            ])
+            ->execute();
+
+        if ( ! App::get_s()->is_affected())
+        {
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
+    /**
+     * @param int $amount
+     * @return bool
+     * @throws Exception
+     */
+    public function increment_likes(int $amount = 1): bool
+    {
+        App::get_s()->from(self::get_table())
+            ->where(['id' => $this->get_id()])
+            ->update(sprintf('likes_balance = likes_balance + %s', $amount))
+            ->execute();
+
+        if ( ! App::get_s()->is_affected())
+        {
+            return FALSE;
+        }
 
         return TRUE;
     }
@@ -347,6 +433,7 @@ class User_model extends Emerald_model {
     public static function find_user_by_email(string $email): User_model
     {
         // TODO: task 1, аутентификация
+        return static::transform_one(App::get_s()->from(self::CLASS_TABLE)->where('email', $email)->one());
     }
 
     /**
@@ -401,6 +488,8 @@ class User_model extends Emerald_model {
         {
             case 'main_page':
                 return self::_preparation_main_page($data);
+            case 'balance':
+                return self::_preparation_balance($data);
             case 'default':
                 return self::_preparation_default($data);
             default:
@@ -445,6 +534,7 @@ class User_model extends Emerald_model {
 
             $o->personaname = $data->get_personaname();
             $o->avatarfull = $data->get_avatarfull();
+            $o->likes_balance = $data->get_likes_balance();
 
             $o->time_created = $data->get_time_created();
             $o->time_updated = $data->get_time_updated();
@@ -453,4 +543,18 @@ class User_model extends Emerald_model {
         return $o;
     }
 
+    /**
+     * @param User_model $data
+     * @return stdClass
+     */
+    private static function _preparation_balance(User_model $data)
+    {
+        $o = new stdClass();
+
+        $o->wallet_balance = $data->get_wallet_balance();
+        $o->wallet_total_refilled = $data->get_wallet_total_refilled();
+        $o->wallet_total_withdrawn = $data->get_wallet_total_withdrawn();
+
+        return $o;
+    }
 }

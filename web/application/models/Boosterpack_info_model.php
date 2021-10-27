@@ -95,7 +95,7 @@ class Boosterpack_info_model extends Emerald_model {
     public function reload()
     {
         parent::reload();
-
+        $this->item = NULL;
         return $this;
     }
 
@@ -125,6 +125,6 @@ class Boosterpack_info_model extends Emerald_model {
             ->where(['boosterpack_id' => $boosterpack_id])
             ->many();
 
-        return self::transform_many($data);
+        return static::transform_many($data);
     }
 }

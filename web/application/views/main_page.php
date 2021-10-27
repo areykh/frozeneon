@@ -45,8 +45,15 @@ use Model\User_model;
         </li>
         <li class="nav-item">
             <?  if (User_model::is_logged()) {?>
+              <button type="button" class="btn btn-info my-2 my-sm-0" type="button" @click="getAnalytics">
+                  Analytics
+              </button>
+            <? }?>
+        </li>
+        <li class="nav-item">
+            <?  if (User_model::is_logged()) {?>
                 <a href="" role="button">
-                    Likes:
+                    Like balance: {{ like_balance }}
                 </a>
             <? }?>
         </li>
@@ -171,7 +178,7 @@ use Model\User_model;
           <div class="card mb-3">
             <div class="post-img" v-bind:style="{ backgroundImage: 'url(' + post.img + ')' }"></div>
             <div class="card-body">
-              <div class="likes" @click="addLike('post', post.id)">
+              <div class="likes" @click="addLike(post.id)">
                 <div class="heart-wrap" v-if="!likes">
                   <div class="heart">
                     <svg class="bi bi-heart" width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -189,22 +196,13 @@ use Model\User_model;
                   <span>{{likes}}</span>
                 </div>
               </div>
-              <p class="card-text" v-for="comment in post.coments">
-                  {{comment.user.personaname + ' - '}}
-                  <small class="text-muted">{{comment.text}}</small>
-                  <a role="button" @click="addLike('comment', comment.id)">
-                      <svg class="bi bi-heart-fill" width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                          <path fill-rule="evenodd" d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314z" clip-rule="evenodd"/>
-                      </svg>
-                      {{ comment.likes }}
-                  </a>
-              </p>
+              <comments :post='post' :comments='post.comments'></comments>
               <form class="form-inline">
-                <div class="form-group">
-                  <input type="text" class="form-control" id="addComment" v-model="commentText">
-                </div>
-                <button type="button" class="btn btn-primary" @click="addComment(post.id)">Add comment</button>
-              </form>
+                 <div class="form-group">
+                   <input type="text" class="form-control" v-model="commentText">
+                 </div>
+                 <button type="button" class="btn btn-primary" @click="addComment(post.id, 0, commentText)">Add comment</button>
+               </form>
             </div>
           </div>
         </div>
@@ -261,6 +259,80 @@ use Model\User_model;
         </div>
       </div>
     </div>
+  </div>
+  <!-- Modal -->
+  <div class="modal fade" id="analyticsModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+       aria-hidden="true">
+      <div class="modal-dialog modal-lg" role="document">
+          <div class="modal-content">
+              <div class="modal-header">
+                  <h5 class="modal-title" id="exampleModalLabel">Amount</h5>
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                      <span aria-hidden="true">&times;</span>
+                  </button>
+              </div>
+              <div class="modal-body">
+                  <ul class="nav nav-pills nav-fill">
+                      <li class="nav-item" v-if="analytics.all">
+                          <a class="nav-link active" data-toggle="tab" href="#analytics" role="tab" aria-selected="true">Analytics</a>
+                      </li>
+                      <li class="nav-item" v-if="analytics.balance">
+                          <a class="nav-link" data-toggle="tab" href="#balance" role="tab" aria-selected="true">Balance</a>
+                      </li>
+                      <li class="nav-item" v-if="analytics.boosterpaks">
+                          <a class="nav-link" data-toggle="tab" href="#boosterpaks" role="tab" aria-selected="true">Boosterpak history</a>
+                      </li>
+                  </ul>
+                  <br>
+                  <div class="tab-content" id="myTabContent">
+                      <div class="tab-pane fade show active" id="analytics" role="tabpanel" v-if="analytics.all">
+                          <table class="table table-dark">
+                              <tr>
+                                  <th scope="col">Id</th>
+                                  <th scope="col">Object (Id)</th>
+                                  <th scope="col">Action</th>
+                                  <th scope="col">Amount</th>
+                                  <th scope="col">Time</th>
+                              </tr>
+                              <tr v-for="analytic_row in analytics.all" >
+                                  <th>{{ analytic_row.id }}</th>
+                                  <th>{{ analytic_row.object }} ({{ analytic_row.object_id }})</th>
+                                  <th>{{ analytic_row.action }}</th>
+                                  <th>{{ analytic_row.amount }}</th>
+                                  <th>{{ analytic_row.time_created }}</th>
+                              </tr>
+                          </table>
+                      </div>
+                      <div class="tab-pane fade" id="balance" role="tabpanel" v-if="analytics.balance">
+                          <p>Wallet balance: {{ analytics.balance.wallet_balance }}</p>
+                          <p>Wallet total refilled: {{ analytics.balance.wallet_total_refilled }}</p>
+                          <p>Wallet total withdrawn: {{ analytics.balance.wallet_total_withdrawn }}</p>
+                      </div>
+                      <div class="tab-pane fade" id="boosterpaks" role="tabpanel" v-if="analytics.boosterpaks">
+                          <table class="table table-dark">
+                              <tr>
+                                  <th scope="col">Id</th>
+                                  <th scope="col">Object (Id)</th>
+                                  <th scope="col">Action</th>
+                                  <th scope="col">Amount</th>
+                                  <th scope="col">Time</th>
+                              </tr>
+                              <tr v-for="analytic_row in analytics.boosterpaks" >
+                                  <th>{{ analytic_row.id }}</th>
+                                  <th>{{ analytic_row.object }} ({{ analytic_row.object_id }})</th>
+                                  <th>{{ analytic_row.action }}</th>
+                                  <th>{{ analytic_row.amount }}</th>
+                                  <th>{{ analytic_row.time_created }}</th>
+                              </tr>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+              <div class="modal-footer">
+                  <button type="button" class="btn btn-success" data-dismiss="modal">Ok</button>
+              </div>
+          </div>
+      </div>
   </div>
 </div>
 <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
